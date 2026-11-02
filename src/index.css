@@ -1,0 +1,64 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-bg: #0b0b0f;
+  --color-surface: #14141b;
+  --color-surface-2: #1c1c25;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-text: #f3f3f6;
+  --color-muted: #9b9bab;
+  --color-brand: #e50012;
+  --color-brand-2: #ff4f7b;
+  --color-showroom: #26c6da;
+  --color-idn: #ff7a1a;
+
+  --font-sans: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Instrument Serif', ui-serif, Georgia, serif;
+
+  --animate-live-ring: live-ring 1.6s ease-out infinite;
+  --animate-shimmer: shimmer 1.4s linear infinite;
+  --animate-float: float 9s ease-in-out infinite;
+
+  @keyframes live-ring {
+    0% { box-shadow: 0 0 0 0 rgb(229 0 18 / 0.7); }
+    100% { box-shadow: 0 0 0 10px rgb(229 0 18 / 0); }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+    50% { transform: translate3d(4%, -6%, 0) scale(1.08); }
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-bg font-sans text-text antialiased;
+  }
+  ::selection {
+    @apply bg-brand text-white;
+  }
+}
+
+@utility skeleton {
+  background: linear-gradient(90deg, var(--color-surface-2) 25%, #262631 50%, var(--color-surface-2) 75%);
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+@utility text-gradient {
+  background: linear-gradient(100deg, var(--color-brand), var(--color-brand-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.15) transparent;
+}
