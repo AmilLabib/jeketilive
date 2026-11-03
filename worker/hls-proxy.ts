@@ -3,10 +3,10 @@
 // are made absolute and the browser fetches them directly.
 // Usage: GET /?url=<encoded master playlist url>
 //
-// Limitation: IDN region-locks some streams to Indonesian IPs (checked on the master only).
-// Cloudflare's egress IPs aren't Indonesian, so those return 403 content_geoblocked, which
-// we pass through and the player shows a "Tonton di IDN" fallback. Locally, `npm run dev`
-// serves this at /hls from your own (Indonesian) connection, so those streams work there.
+// IDN region-locks some streams to Indonesian IPs (checked on the master only). Like a normal
+// proxy, we pass the viewer's real IP on in X-Forwarded-For so the check sees the viewer, not
+// Cloudflare. CF-Connecting-IP is set by Cloudflare and can't be forged by the client.
+// If it still fails, IVS returns 403 content_geoblocked and the player shows "Tonton di IDN".
 const ALLOWED_HOST = /(^|\.)live-video\.net$/
 
 const CORS = {
@@ -41,7 +41,8 @@ export default {
       return new Response('Host tidak diizinkan', { status: 403, headers: CORS })
     }
 
-    const upstream = await fetch(target)
+    const viewerIp = request.headers.get('cf-connecting-ip')
+    const upstream = await fetch(target, { headers: viewerIp ? { 'x-forwarded-for': viewerIp } : {} })
     const headers = new Headers({ ...CORS, 'cache-control': 'no-cache' })
     headers.set('content-type', upstream.headers.get('content-type') ?? 'application/vnd.apple.mpegurl')
 

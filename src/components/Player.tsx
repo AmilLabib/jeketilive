@@ -2,7 +2,7 @@ import Hls, { type Level } from 'hls.js'
 import { useEffect, useRef, useState } from 'react'
 import { playableUrl } from '../lib/api'
 import type { LiveStream } from '../lib/types'
-import { ExpandIcon, ExternalIcon, MuteIcon, PauseIcon, PlayIcon, VolumeIcon } from './icons'
+import { ExpandIcon, ExternalIcon, MuteIcon, PauseIcon, PlayIcon, RefreshIcon, VolumeIcon } from './icons'
 
 interface Props {
   stream: LiveStream
@@ -15,6 +15,10 @@ interface Props {
 const JUMP_AFTER_S = 6
 const RELOAD_AFTER_S = 15
 const retryDelay = (attempt: number) => Math.min(2000 * 2 ** attempt, 15_000)
+// IDN's region check on the master playlist passes or fails per request depending on which
+// Cloudflare egress IP the proxy gets, so a 403 is retried quickly a few times first.
+const GEO_RETRIES = 10
+const GEO_RETRY_DELAY_MS = 300
 
 export default function Player({ stream, className = '', startMuted = false }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -29,9 +33,10 @@ export default function Player({ stream, className = '', startMuted = false }: P
   /** Bumping this re-runs the load effect, i.e. a full reload of the source. */
   const [attempt, setAttempt] = useState(0)
   const [reconnecting, setReconnecting] = useState(false)
-  /** IDN region-locked the stream (master playlist 403); retrying won't help. */
+  /** IDN region-locked the stream (master playlist 403) even after GEO_RETRIES attempts. */
   const [blocked, setBlocked] = useState(false)
   const retriesRef = useRef(0)
+  const geoRetriesRef = useRef(0)
   const levelRef = useRef(-1)
 
   const src = playableUrl(stream)
@@ -42,11 +47,12 @@ export default function Player({ stream, className = '', startMuted = false }: P
     if (attempt === 0) video.muted = startMuted
 
     let reloadTimer: ReturnType<typeof setTimeout> | undefined
-    const reload = () => {
+    const reload = (delay = retryDelay(retriesRef.current++)) => {
       if (reloadTimer) return
       setReconnecting(true)
-      reloadTimer = setTimeout(() => setAttempt((a) => a + 1), retryDelay(retriesRef.current++))
+      reloadTimer = setTimeout(() => setAttempt((a) => a + 1), delay)
     }
+    const onNativeError = () => reload()
 
     // Browsers block unmuted autoplay without a prior click; fall back to muted.
     const start = () =>
@@ -69,7 +75,8 @@ export default function Player({ stream, className = '', startMuted = false }: P
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (!data.fatal) return
         if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR && data.response?.code === 403) {
-          setBlocked(true)
+          if (geoRetriesRef.current++ < GEO_RETRIES) reload(GEO_RETRY_DELAY_MS)
+          else setBlocked(true)
         } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !mediaRecovered) {
           mediaRecovered = true
           hls!.recoverMediaError()
@@ -81,7 +88,7 @@ export default function Player({ stream, className = '', startMuted = false }: P
       hls.attachMedia(video)
     } else {
       video.src = src // Safari plays HLS natively
-      video.addEventListener('error', reload)
+      video.addEventListener('error', onNativeError)
       start()
     }
 
@@ -106,7 +113,7 @@ export default function Player({ stream, className = '', startMuted = false }: P
     return () => {
       clearInterval(watchdog)
       clearTimeout(reloadTimer)
-      video.removeEventListener('error', reload)
+      video.removeEventListener('error', onNativeError)
       if (hls) {
         hls.destroy()
         hlsRef.current = null
@@ -150,6 +157,7 @@ export default function Player({ stream, className = '', startMuted = false }: P
           setBuffering(false)
           setReconnecting(false)
           retriesRef.current = 0
+          geoRetriesRef.current = 0
         }}
         className="size-full object-contain"
       />
@@ -158,16 +166,29 @@ export default function Player({ stream, className = '', startMuted = false }: P
         <div className="absolute inset-0 z-10 grid place-items-center bg-black/80 p-6 text-center">
           <div className="max-w-xs space-y-3">
             <p className="text-sm text-white/85">
-              Live ini dikunci IDN khusus penonton dari Indonesia, jadi belum bisa diputar lewat Jeketilive.
+              Live ini dikunci IDN khusus penonton dari Indonesia dan barusan gagal dimuat. Coba lagi, atau tonton
+              langsung di IDN.
             </p>
-            <a
-              href={stream.roomUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/85"
-            >
-              <ExternalIcon width={15} height={15} /> Tonton di IDN
-            </a>
+            <div className="flex justify-center gap-2">
+              <button
+                onClick={() => {
+                  geoRetriesRef.current = 0
+                  setBlocked(false)
+                  setAttempt((a) => a + 1)
+                }}
+                className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20"
+              >
+                <RefreshIcon width={15} height={15} /> Coba lagi
+              </button>
+              <a
+                href={stream.roomUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/85"
+              >
+                <ExternalIcon width={15} height={15} /> Tonton di IDN
+              </a>
+            </div>
           </div>
         </div>
       )}
