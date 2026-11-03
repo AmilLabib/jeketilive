@@ -18,7 +18,8 @@ function devApi(): Plugin {
           if (!mod?.GET) return next()
           handler = mod.GET
         } else if (url.pathname === '/hls') {
-          handler = (await server.ssrLoadModule('/worker/hls-proxy.ts')).default.fetch
+          // Locally the fetch already comes from an Indonesian IP, so skip the Durable Object.
+          handler = (await server.ssrLoadModule('/worker/hls-proxy.ts')).handleMaster
         } else {
           return next()
         }

@@ -3,3 +3,12 @@ main = "hls-proxy.ts"
 compatibility_date = "2026-10-01"
 workers_dev = true
 preview_urls = false
+
+# Fetches the master playlist from Asia-Pacific; see hls-proxy.ts.
+[[durable_objects.bindings]]
+name = "MASTER_FETCHER"
+class_name = "MasterFetcher"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MasterFetcher"]

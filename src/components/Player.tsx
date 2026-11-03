@@ -15,8 +15,8 @@ interface Props {
 const JUMP_AFTER_S = 6
 const RELOAD_AFTER_S = 15
 const retryDelay = (attempt: number) => Math.min(2000 * 2 ** attempt, 15_000)
-// IDN's region check on the master playlist passes or fails per request depending on which
-// Cloudflare egress IP the proxy gets, so a 403 is retried quickly a few times first.
+// The worker fetches the master from Asia so IDN's region check should pass (see
+// worker/hls-proxy.ts); a 403 is still retried a few times as a safety net.
 const GEO_RETRIES = 10
 const GEO_RETRY_DELAY_MS = 300
 

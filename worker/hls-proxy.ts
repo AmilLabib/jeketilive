@@ -3,15 +3,22 @@
 // are made absolute and the browser fetches them directly.
 // Usage: GET /?url=<encoded master playlist url>
 //
-// IDN region-locks some streams to Indonesian IPs (checked on the master only). Like a normal
-// proxy, we pass the viewer's real IP on in X-Forwarded-For so the check sees the viewer, not
-// Cloudflare. CF-Connecting-IP is set by Cloudflare and can't be forged by the client.
-// If it still fails, IVS returns 403 content_geoblocked and the player shows "Tonton di IDN".
+// IDN region-locks some streams (403 content_geoblocked, checked on the master only). Asian
+// egress passes, but Cloudflare often runs Workers for Telkomsel viewers in the US or Europe,
+// and the result sticks per connection. So the fetch is done by a Durable Object pinned to
+// Asia-Pacific via locationHint (measured: SIN/ICN/NRT/KIX all pass, from any entry colo).
 const ALLOWED_HOST = /(^|\.)live-video\.net$/
 
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, OPTIONS',
+}
+
+interface Env {
+  MASTER_FETCHER: {
+    idFromName(name: string): unknown
+    get(id: unknown, options?: { locationHint?: string }): { fetch(request: Request): Promise<Response> }
+  }
 }
 
 function absolutizePlaylist(text: string, base: URL) {
@@ -27,26 +34,37 @@ function absolutizePlaylist(text: string, base: URL) {
     .join('\n')
 }
 
+/** The actual proxy. Runs inside the Durable Object in production and directly in `npm run dev`. */
+export async function handleMaster(request: Request): Promise<Response> {
+  if (request.method === 'OPTIONS') return new Response(null, { headers: CORS })
+
+  let target: URL
+  try {
+    target = new URL(new URL(request.url).searchParams.get('url') ?? '')
+  } catch {
+    return new Response('Parameter url tidak valid', { status: 400, headers: CORS })
+  }
+  if (target.protocol !== 'https:' || !ALLOWED_HOST.test(target.hostname)) {
+    return new Response('Host tidak diizinkan', { status: 403, headers: CORS })
+  }
+
+  const upstream = await fetch(target)
+  const headers = new Headers({ ...CORS, 'cache-control': 'no-cache' })
+  headers.set('content-type', upstream.headers.get('content-type') ?? 'application/vnd.apple.mpegurl')
+
+  const body = await upstream.text()
+  return new Response(upstream.ok ? absolutizePlaylist(body, target) : body, { status: upstream.status, headers })
+}
+
+export class MasterFetcher {
+  fetch(request: Request) {
+    return handleMaster(request)
+  }
+}
+
 export default {
-  async fetch(request: Request): Promise<Response> {
-    if (request.method === 'OPTIONS') return new Response(null, { headers: CORS })
-
-    let target: URL
-    try {
-      target = new URL(new URL(request.url).searchParams.get('url') ?? '')
-    } catch {
-      return new Response('Parameter url tidak valid', { status: 400, headers: CORS })
-    }
-    if (target.protocol !== 'https:' || !ALLOWED_HOST.test(target.hostname)) {
-      return new Response('Host tidak diizinkan', { status: 403, headers: CORS })
-    }
-
-    const viewerIp = request.headers.get('cf-connecting-ip')
-    const upstream = await fetch(target, { headers: viewerIp ? { 'x-forwarded-for': viewerIp } : {} })
-    const headers = new Headers({ ...CORS, 'cache-control': 'no-cache' })
-    headers.set('content-type', upstream.headers.get('content-type') ?? 'application/vnd.apple.mpegurl')
-
-    const body = await upstream.text()
-    return new Response(upstream.ok ? absolutizePlaylist(body, target) : body, { status: upstream.status, headers })
+  fetch(request: Request, env: Env) {
+    const ns = env.MASTER_FETCHER
+    return ns.get(ns.idFromName('apac'), { locationHint: 'apac' }).fetch(request)
   },
 }
