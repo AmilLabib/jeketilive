@@ -1,4 +1,5 @@
-// Called every 5 minutes by .github/workflows/snapshot.yml. Records each live broadcast
+// Called every 5 minutes by the Cloudflare Worker's cron (worker/hls-proxy.ts scheduled());
+// .github/workflows/snapshot.yml is a slower backup. Records each live broadcast
 // in Supabase and marks it ended once it disappears from the platform's live list.
 import { createClient } from '@supabase/supabase-js'
 import type { LiveSession } from '../../src/lib/types.js'

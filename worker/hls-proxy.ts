@@ -19,6 +19,9 @@ interface Env {
     idFromName(name: string): unknown
     get(id: unknown, options?: { locationHint?: string }): { fetch(request: Request): Promise<Response> }
   }
+  /** Secrets for the history snapshot cron (wrangler secret put). */
+  CRON_SECRET: string
+  SITE_URL: string
 }
 
 function absolutizePlaylist(text: string, base: URL) {
@@ -66,5 +69,16 @@ export default {
   fetch(request: Request, env: Env) {
     const ns = env.MASTER_FETCHER
     return ns.get(ns.idFromName('apac'), { locationHint: 'apac' }).fetch(request)
+  },
+
+  // Live history: calls api/cron/snapshot every 5 minutes (see [triggers] in wrangler.toml).
+  // GitHub Actions' schedule was too unreliable for this (runs only every few hours).
+  async scheduled(_event: unknown, env: Env) {
+    const res = await fetch(`${env.SITE_URL}/api/cron/snapshot`, {
+      headers: { authorization: `Bearer ${env.CRON_SECRET}` },
+    })
+    const body = await res.text()
+    if (!res.ok) throw new Error(`Snapshot gagal (HTTP ${res.status}): ${body}`)
+    console.log(body)
   },
 }

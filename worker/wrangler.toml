@@ -9,6 +9,14 @@ preview_urls = false
 name = "MASTER_FETCHER"
 class_name = "MasterFetcher"
 
+# Persisted Workers Logs (dashboard → Logs), so cron results/errors can be checked afterwards.
+[observability]
+enabled = true
+
+# Live history snapshot (see scheduled() in hls-proxy.ts). Needs secrets CRON_SECRET and SITE_URL.
+[triggers]
+crons = ["*/5 * * * *"]
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["MasterFetcher"]
