@@ -27,6 +27,13 @@ const retryDelay = (attempt: number) => Math.min(2000 * 2 ** attempt, 15_000)
 // worker/hls-proxy.ts); a 403 is still retried a few times as a safety net.
 const GEO_RETRIES = 10
 const GEO_RETRY_DELAY_MS = 300
+const HIDE_CONTROLS_MS = 5000
+/** Further than this behind the live edge, the Live badge turns into a "jump to live" button. */
+const BEHIND_LIVE_S = 10
+
+/** Where "live" is: hls.js' sync point, or a few seconds before the end of the stream (Safari). */
+const liveEdge = (video: HTMLVideoElement, hls: Hls | null) =>
+  hls?.liveSyncPosition ?? (video.seekable.length ? video.seekable.end(0) - 3 : null)
 
 export default function Player({ stream, className = '', startMuted = false, comments }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -43,6 +50,7 @@ export default function Player({ stream, className = '', startMuted = false, com
   const [reconnecting, setReconnecting] = useState(false)
   /** IDN region-locked the stream (master playlist 403) even after GEO_RETRIES attempts. */
   const [blocked, setBlocked] = useState(false)
+  const [behind, setBehind] = useState(false)
   const retriesRef = useRef(0)
   const geoRetriesRef = useRef(0)
   const levelRef = useRef(-1)
@@ -106,6 +114,8 @@ export default function Player({ stream, className = '', startMuted = false, com
     let lastTime = -1
     let stalledFor = 0
     const watchdog = setInterval(() => {
+      const edge = liveEdge(video, hls)
+      setBehind(edge !== null && edge - video.currentTime > BEHIND_LIVE_S)
       if (video.paused || video.currentTime !== lastTime) {
         lastTime = video.currentTime
         stalledFor = 0
@@ -113,7 +123,6 @@ export default function Player({ stream, className = '', startMuted = false, com
       }
       stalledFor++
       if (stalledFor === JUMP_AFTER_S) {
-        const edge = hls?.liveSyncPosition ?? (video.seekable.length ? video.seekable.end(0) - 3 : null)
         if (edge) video.currentTime = edge
       } else if (stalledFor >= RELOAD_AFTER_S) {
         reload()
@@ -151,8 +160,29 @@ export default function Player({ stream, className = '', startMuted = false, com
     levelRef.current = value
     setLevel(value)
   }
-  const fullscreen = () =>
-    document.fullscreenElement ? document.exitFullscreen() : wrapRef.current?.requestFullscreen()
+  const goLive = () => {
+    const edge = liveEdge(video(), hlsRef.current)
+    if (edge !== null) video().currentTime = edge
+    video().play()
+    setBehind(false)
+  }
+  const fullscreen = () => {
+    if (document.fullscreenElement) return document.exitFullscreen()
+    const wrap = wrapRef.current!
+    if (wrap.requestFullscreen) return wrap.requestFullscreen()
+    // iPhone (every iOS browser is WebKit) can only put the <video> itself in fullscreen.
+    ;(video() as HTMLVideoElement & { webkitEnterFullscreen?: () => void }).webkitEnterFullscreen?.()
+  }
+
+  // Hide the controls after a few seconds without mouse/touch/keyboard activity.
+  const [idle, setIdle] = useState(false)
+  const idleTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const wake = () => {
+    setIdle(false)
+    clearTimeout(idleTimer.current)
+    idleTimer.current = setTimeout(() => setIdle(true), HIDE_CONTROLS_MS)
+  }
+  useEffect(() => () => clearTimeout(idleTimer.current), [])
 
   const vertical = stream.platform === 'idn'
   const openPip = useCallback(async () => {
@@ -180,12 +210,22 @@ export default function Player({ stream, className = '', startMuted = false, com
   useEffect(() => () => pipWin?.close(), [pipWin])
 
   return (
-    <div ref={wrapRef} className={`group relative overflow-hidden bg-black ${className}`}>
+    <div
+      ref={wrapRef}
+      onPointerMove={wake}
+      onPointerDown={wake}
+      onKeyDown={wake}
+      onPointerLeave={(e) => e.pointerType === 'mouse' && setIdle(true)}
+      className={`relative overflow-hidden bg-black ${className}`}
+    >
       <video
         ref={videoRef}
         playsInline
         onClick={togglePlay}
-        onPlay={() => setPlaying(true)}
+        onPlay={() => {
+          setPlaying(true)
+          wake()
+        }}
         onPause={() => setPlaying(false)}
         onWaiting={() => setBuffering(true)}
         onPlaying={() => {
@@ -266,7 +306,7 @@ export default function Player({ stream, className = '', startMuted = false, com
       )}
 
       <div
-        className={`absolute inset-x-0 bottom-0 flex items-center gap-2 bg-linear-to-t from-black/85 to-transparent px-3 pb-3 pt-10 transition-opacity duration-300 ${playing ? 'opacity-0 group-hover:opacity-100 focus-within:opacity-100' : 'opacity-100'}`}
+        className={`absolute inset-x-0 bottom-0 flex items-center gap-2 bg-linear-to-t from-black/85 to-transparent px-3 pb-3 pt-10 transition-opacity duration-300 ${playing && idle ? 'pointer-events-none opacity-0' : 'opacity-100'}`}
       >
         <button onClick={togglePlay} className="grid size-9 place-items-center rounded-full hover:bg-white/15" aria-label={playing ? 'Jeda' : 'Putar'}>
           {playing ? <PauseIcon /> : <PlayIcon />}
@@ -284,9 +324,14 @@ export default function Player({ stream, className = '', startMuted = false, com
           className="hidden w-20 accent-brand sm:block"
           aria-label="Volume"
         />
-        <span className="ml-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider">
-          <span className="size-1.5 animate-live-ring rounded-full bg-brand" /> Live
-        </span>
+        <button
+          onClick={goLive}
+          disabled={!behind}
+          title={behind ? 'Lompat ke siaran terbaru' : 'Sedang menonton siaran terbaru'}
+          className={`ml-1 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${behind ? 'bg-white/15 text-white/70 hover:bg-brand hover:text-white' : ''}`}
+        >
+          <span className={`size-1.5 rounded-full ${behind ? 'bg-white/60' : 'animate-live-ring bg-brand'}`} /> Live
+        </button>
 
         <div className="ml-auto flex items-center gap-1">
           {levels.length > 1 && (
