@@ -1,14 +1,22 @@
 import Hls, { type Level } from 'hls.js'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { playableUrl } from '../lib/api'
+import type { ChatMessage } from '../lib/chat'
 import type { LiveStream } from '../lib/types'
-import { ExpandIcon, ExternalIcon, MuteIcon, PauseIcon, PlayIcon, RefreshIcon, VolumeIcon } from './icons'
+import { ExpandIcon, ExternalIcon, MuteIcon, PauseIcon, PipIcon, PlayIcon, RefreshIcon, VolumeIcon } from './icons'
+import { copyStyles, documentPip } from '../lib/pip'
+import PipWindow from './PipWindow'
 
 interface Props {
   stream: LiveStream
   className?: string
   /** Multi-view starts extra players muted so audio doesn't overlap. */
   startMuted?: boolean
+  /**
+   * Enables picture-in-picture (button + automatic on tab switch). In Chrome these comments are
+   * overlaid on the floating window; other browsers fall back to plain video PiP.
+   */
+  comments?: ChatMessage[]
 }
 
 // Stall recovery: if playback doesn't advance, first jump to the live edge, then reload the source.
@@ -20,7 +28,7 @@ const retryDelay = (attempt: number) => Math.min(2000 * 2 ** attempt, 15_000)
 const GEO_RETRIES = 10
 const GEO_RETRY_DELAY_MS = 300
 
-export default function Player({ stream, className = '', startMuted = false }: Props) {
+export default function Player({ stream, className = '', startMuted = false, comments }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<Hls | null>(null)
@@ -38,6 +46,8 @@ export default function Player({ stream, className = '', startMuted = false }: P
   const retriesRef = useRef(0)
   const geoRetriesRef = useRef(0)
   const levelRef = useRef(-1)
+  const [pipWin, setPipWin] = useState<Window | null>(null)
+  const pipEnabled = comments !== undefined && (!!documentPip() || !!document.pictureInPictureEnabled)
 
   const src = playableUrl(stream)
 
@@ -144,6 +154,31 @@ export default function Player({ stream, className = '', startMuted = false }: P
   const fullscreen = () =>
     document.fullscreenElement ? document.exitFullscreen() : wrapRef.current?.requestFullscreen()
 
+  const vertical = stream.platform === 'idn'
+  const openPip = useCallback(async () => {
+    const pip = documentPip()
+    if (!pip) return videoRef.current!.requestPictureInPicture()
+    const win = await pip.requestWindow(vertical ? { width: 300, height: 533 } : { width: 480, height: 270 })
+    copyStyles(win.document)
+    win.addEventListener('pagehide', () => setPipWin(null))
+    setPipWin(win)
+  }, [vertical])
+
+  // Chrome calls this when the user switches tabs while the video plays with sound, like Google Meet.
+  useEffect(() => {
+    if (!pipEnabled) return
+    const action = 'enterpictureinpicture' as MediaSessionAction
+    try {
+      navigator.mediaSession.setActionHandler(action, () => void openPip())
+    } catch {
+      return // Browser doesn't support automatic picture-in-picture.
+    }
+    return () => navigator.mediaSession.setActionHandler(action, null)
+  }, [pipEnabled, openPip])
+
+  // Leaving the page closes the floating window.
+  useEffect(() => () => pipWin?.close(), [pipWin])
+
   return (
     <div ref={wrapRef} className={`group relative overflow-hidden bg-black ${className}`}>
       <video
@@ -161,6 +196,23 @@ export default function Player({ stream, className = '', startMuted = false }: P
         }}
         className="size-full object-contain"
       />
+
+      {pipWin && comments && (
+        <>
+          <PipWindow win={pipWin} videoRef={videoRef} stream={stream} comments={comments} />
+          <div className="absolute inset-0 grid place-items-center p-6 text-center">
+            <div className="space-y-3">
+              <p className="text-sm text-white/75">Sedang diputar di jendela picture-in-picture.</p>
+              <button
+                onClick={() => pipWin.close()}
+                className="rounded-full bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20"
+              >
+                Kembalikan ke sini
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {blocked && (
         <div className="absolute inset-0 z-10 grid place-items-center bg-black/80 p-6 text-center">
@@ -252,7 +304,17 @@ export default function Player({ stream, className = '', startMuted = false }: P
               ))}
             </select>
           )}
-          <button onClick={fullscreen} className="grid size-9 place-items-center rounded-full hover:bg-white/15" aria-label="Layar penuh">
+          {pipEnabled && !pipWin && (
+            <button
+              onClick={() => void openPip()}
+              className="grid size-9 place-items-center rounded-full hover:bg-white/15"
+              aria-label="Picture-in-picture"
+              title="Picture-in-picture"
+            >
+              <PipIcon />
+            </button>
+          )}
+          <button onClick={fullscreen}className="grid size-9 place-items-center rounded-full hover:bg-white/15" aria-label="Layar penuh">
             <ExpandIcon />
           </button>
         </div>

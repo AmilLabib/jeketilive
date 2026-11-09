@@ -7,10 +7,12 @@ import Player from '../components/Player'
 import { EmptyState, LiveDot, PlatformBadge, SectionTitle } from '../components/ui'
 import { memberBySlug, useStream } from '../lib/api'
 import { formatNumber, formatRelative } from '../lib/format'
+import { useChat } from '../lib/useChat'
 
 export default function Watch() {
   const { platform, roomId } = useParams()
   const { stream, data, isPending } = useStream(platform, roomId)
+  const chat = useChat(stream)
 
   if (isPending) {
     return (
@@ -44,6 +46,7 @@ export default function Watch() {
             <Player
               key={stream.sessionId}
               stream={stream}
+              comments={chat.messages}
               className={`mx-auto rounded-3xl ${vertical ? 'aspect-9/16 max-h-[78vh]' : 'aspect-video'}`}
             />
           </motion.div>
@@ -92,7 +95,7 @@ export default function Watch() {
           </motion.div>
         </div>
 
-        <ChatPanel key={stream.sessionId} stream={stream} className="h-[28rem] lg:sticky lg:top-20 lg:h-[calc(100dvh-7rem)]" />
+        <ChatPanel key={stream.sessionId} messages={chat.messages} status={chat.status} className="h-[28rem] lg:sticky lg:top-20 lg:h-[calc(100dvh-7rem)]" />
       </div>
 
       {others.length > 0 && (

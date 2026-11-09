@@ -46,6 +46,12 @@ export const ExternalIcon = (p: P) => (
 export const RefreshIcon = (p: P) => (
   <svg {...base} {...p}><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" /></svg>
 )
-export const SearchIcon = (p: P) => (
+export const PipIcon = (p: P) => (
+  <svg {...base} {...p}><rect x="2" y="4" width="20" height="16" rx="2" /><rect x="12" y="11" width="7" height="6" rx="1" fill="currentColor" /></svg>
+)
+export const ChatIcon = (p: P) => (
+  <svg {...base} {...p}><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg>
+)
+export const SearchIcon =(p: P) => (
   <svg {...base} {...p}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
 )

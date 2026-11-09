@@ -18,6 +18,7 @@
   --animate-live-ring: live-ring 1.6s ease-out infinite;
   --animate-shimmer: shimmer 1.4s linear infinite;
   --animate-float: float 9s ease-in-out infinite;
+  --animate-comment-in: comment-in 0.25s ease-out;
 
   @keyframes live-ring {
     0% { box-shadow: 0 0 0 0 rgb(229 0 18 / 0.7); }
@@ -30,6 +31,9 @@
   @keyframes float {
     0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
     50% { transform: translate3d(4%, -6%, 0) scale(1.08); }
+  }
+  @keyframes comment-in {
+    from { opacity: 0; transform: translateY(6px); }
   }
 }
 

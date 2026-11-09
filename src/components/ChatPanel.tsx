@@ -1,9 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useRef, useState } from 'react'
-import { connectChat, type ChatMessage, type ChatStatus } from '../lib/chat'
-import type { LiveStream } from '../lib/types'
-
-const MAX_MESSAGES = 150
+import { useEffect, useRef } from 'react'
+import type { ChatMessage, ChatStatus } from '../lib/chat'
 
 const STATUS: Record<ChatStatus, { label: string; color: string }> = {
   connecting: { label: 'Menghubungkan...', color: 'bg-amber-400' },
@@ -11,24 +8,17 @@ const STATUS: Record<ChatStatus, { label: string; color: string }> = {
   error: { label: 'Komentar tidak tersedia', color: 'bg-red-500' },
 }
 
-export default function ChatPanel({ stream, className = '' }: { stream: LiveStream; className?: string }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [status, setStatus] = useState<ChatStatus>('connecting')
+export default function ChatPanel({
+  messages,
+  status,
+  className = '',
+}: {
+  messages: ChatMessage[]
+  status: ChatStatus
+  className?: string
+}) {
   const listRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
-
-  // Depend on primitives so the 30s live-list refresh (new stream object) doesn't reconnect.
-  // Parents key this component by sessionId, so a new broadcast starts with empty messages.
-  const { platform, roomId, showroomChatKey, idnUsername } = stream
-  useEffect(
-    () =>
-      connectChat(
-        { platform, roomId, showroomChatKey, idnUsername },
-        (m) => setMessages((prev) => [...prev.slice(-(MAX_MESSAGES - 1)), m]),
-        setStatus,
-      ),
-    [platform, roomId, showroomChatKey, idnUsername],
-  )
 
   useEffect(() => {
     const list = listRef.current
