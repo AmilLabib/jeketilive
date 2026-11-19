@@ -44,10 +44,6 @@ async function showroomLives(): Promise<LiveStream[]> {
   if (!res.ok) throw new Error(`Showroom HTTP ${res.status}`)
   const json = (await res.json()) as { onlives: { lives: ShowroomLive[] }[] }
 
-  // TEMP MOCK: show one random live (non-JKT48) Showroom room as the first member. Remove after testing.
-  const mockLive = json.onlives.flatMap((group) => group.lives).find((live) => live.streaming_url_list?.length)
-  if (mockLive) byShowroomId.set(mockLive.room_id, members.find((m) => m.showroomId)!)
-
   const seen = new Set<number>()
   const memberLives = json.onlives
     .flatMap((group) => group.lives)
