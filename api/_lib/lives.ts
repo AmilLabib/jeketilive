@@ -21,7 +21,22 @@ interface ShowroomLive {
   telop: string | null
   image: string
   bcsvr_key: string
-  streaming_url_list?: { type: string; url: string }[]
+  streaming_url_list?: StreamingUrl[]
+}
+
+type StreamingUrl = { type: string; url: string }
+
+const pickHls = (urls: StreamingUrl[]) => urls.find((u) => u.type === 'hls_all') ?? urls.find((u) => u.type === 'hls')
+
+// onlives only lists the 144p "low quality" HLS; the per-room endpoint has the ABR master (144p/360p/1080p).
+async function roomStreamingUrls(roomId: number): Promise<StreamingUrl[]> {
+  try {
+    const res = await fetch(`https://www.showroom-live.com/api/live/streaming_url?room_id=${roomId}&abr_available=1`)
+    if (!res.ok) return []
+    return ((await res.json()) as { streaming_url_list?: StreamingUrl[] }).streaming_url_list ?? []
+  } catch {
+    return []
+  }
 }
 
 async function showroomLives(): Promise<LiveStream[]> {
@@ -29,16 +44,21 @@ async function showroomLives(): Promise<LiveStream[]> {
   if (!res.ok) throw new Error(`Showroom HTTP ${res.status}`)
   const json = (await res.json()) as { onlives: { lives: ShowroomLive[] }[] }
 
-  const seen = new Set<number>()
-  const streams: LiveStream[] = []
-  for (const live of json.onlives.flatMap((group) => group.lives)) {
-    const member = byShowroomId.get(live.room_id)
-    if (!member || seen.has(live.room_id)) continue
-    seen.add(live.room_id)
+  // TEMP MOCK: show one random live (non-JKT48) Showroom room as the first member. Remove after testing.
+  const mockLive = json.onlives.flatMap((group) => group.lives).find((live) => live.streaming_url_list?.length)
+  if (mockLive) byShowroomId.set(mockLive.room_id, members.find((m) => m.showroomId)!)
 
-    const urls = live.streaming_url_list ?? []
-    const hls = urls.find((u) => u.type === 'hls_all') ?? urls.find((u) => u.type === 'hls')
-    if (!hls) continue
+  const seen = new Set<number>()
+  const memberLives = json.onlives
+    .flatMap((group) => group.lives)
+    .filter((live) => byShowroomId.has(live.room_id) && !seen.has(live.room_id) && seen.add(live.room_id))
+  const roomUrls = await Promise.all(memberLives.map((live) => roomStreamingUrls(live.room_id)))
+
+  const streams: LiveStream[] = []
+  memberLives.forEach((live, i) => {
+    const member = byShowroomId.get(live.room_id)!
+    const hls = pickHls(roomUrls[i]) ?? pickHls(live.streaming_url_list ?? [])
+    if (!hls) return
 
     streams.push({
       platform: 'showroom',
@@ -54,7 +74,7 @@ async function showroomLives(): Promise<LiveStream[]> {
       roomUrl: `https://www.showroom-live.com/r/${live.room_url_key}`,
       showroomChatKey: live.bcsvr_key,
     })
-  }
+  })
   return streams
 }
 
